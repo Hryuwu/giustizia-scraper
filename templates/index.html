@@ -78,7 +78,7 @@
           <th>Anno</th>
         </tr>
       </thead>
-      <tbody id="resultsBody">
+      <tbody id="matches-log">
       </tbody>
     </table>
   </div>
@@ -115,6 +115,10 @@
     socket.on('progress_update', (data) => {
       const pct = Math.max(0, Math.min(100, data.percentage || 0));
       document.getElementById('progress-bar').value = pct;
+      document.getElementById('progressContainer').style.display = 'block';
+      document.getElementById('resultsContainer').style.display = 'none';
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
       document.getElementById('progress-text').textContent =
         `${pct.toFixed(1)}% — ${data.status || ''}`;
     });
@@ -142,10 +146,13 @@
     // Matches
     socket.on('match_found', (data) => {
       const log = document.getElementById('matches-log');
-      const div = document.createElement('div');
-      div.className = 'log-entry match';
-      div.textContent = `✅ Match in ${data.case_number} — "${data.keyword}" (score: ${data.score})`;
-      log.appendChild(div);
+      const tr = document.createElement('tr');
+       tr.innerHTML = `
+          <td><span class="keyword-tag">${data.keyword}</span></td>
+          <td><span class="case-number">${data.case_number}</span></td>
+          <td>${year}</td>
+        `;
+      log.appendChild(tr);
       log.scrollTop = log.scrollHeight;
     });
 
@@ -170,10 +177,9 @@
       // document.getElementById('timeout-log').innerHTML = '';
       // document.getElementById('raw-log').innerHTML = '';
       document.getElementById('matches-log').innerHTML = '';
-      document.getElementById('progressContainer').style.display = 'block';
-      document.getElementById('resultsContainer').style.display = 'none';
-      document.getElementById('startBtn').disabled = true;
-      document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
+      document.getElementById('progressContainer').style.display = 'none';
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('startBtn').textContent = '🔍 Avvia Ricerca';
       document.getElementById('progress-bar').value = 0;
       document.getElementById('progress-text').textContent = '0% — avviato';
 
@@ -181,6 +187,4 @@
     });
   </script>
 </body>
-
 </html>
-
