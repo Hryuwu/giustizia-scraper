@@ -66,10 +66,10 @@
   <div id="matches-log" class="log-box"></div>
 
   <!-- IMPORTANT: use the Socket.IO script served by Flask-SocketIO (versions match) -->
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io({ transports: ['websocket', 'polling'] });
+  <script type="module">
+    import { io } from "https://cdn.socket.io/4.8.1/socket.io.esm.min.js";
 
+    const socket = io({ transports: ['websocket', 'polling'] });
     // Connection state
     socket.on('connect', () => {
       document.getElementById('conn').textContent = '🟢 Connesso';
@@ -149,3 +149,4 @@
   </script>
 </body>
 </html>
+
