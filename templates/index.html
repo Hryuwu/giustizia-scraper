@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giustizia Scraper</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏛️ Giustizia Scraper</h1>
+            <p>Cerca ricorsi nel database del Consiglio di Stato</p>
+        </div>
+        
+        <div class="form-container">
+            <form id="scraperForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="year">Anno:</label>
+                        <input type="number" id="year" name="year" min="2000" max="2025" value="2024" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="precision">Precisione ricerca (0-100):</label>
+                        <input type="number" id="precision" name="precision" min="0" max="100" value="90" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="startNum">Numero iniziale:</label>
+                        <input type="number" id="startNum" name="startNum" min="1" value="1" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="endNum">Numero finale:</label>
+                        <input type="number" id="endNum" name="endNum" min="1" value="100" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="keywords">Parole chiave (una per riga):</label>
+                    <textarea id="keywords" name="keywords" placeholder="Inserisci le parole chiave da cercare, una per riga..." required></textarea>
+                </div>
+                
+                <div class="btn-container">
+                    <button type="submit" class="btn-primary" id="startBtn">🔍 Avvia Ricerca</button>
+                </div>
+            </form>
+            
+            <div class="progress-container" id="progressContainer">
+                <h3 id="progressText">Ricerca in corso...</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p id="progressStatus">0 / 0 ricorsi processati</p>
+            </div>
+        </div>
+        
+        <div class="results-container" id="resultsContainer">
+            <div class="results-header">
+                <h2>📋 Risultati della Ricerca</h2>
+                <p id="resultsCount"></p>
+            </div>
+            
+            <table class="results-table" id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Parola Chiave</th>
+                        <th>Numero Ricorso</th>
+                        <th>Anno</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        class GiustiziaScraperSimulator {
+            constructor() {
+                this.isRunning = false;
+                this.results = {};
+                this.currentProgress = 0;
+                this.totalSearches = 0;
+            }
+
+            async simulateSearch(year, startNum, endNum, keywords, precision) {
+                this.totalSearches = endNum - startNum + 1;
+                this.currentProgress = 0;
+                this.results = {};
+
+                const progressFill = document.getElementById('progressFill');
+                const progressStatus = document.getElementById('progressStatus');
+                const progressText = document.getElementById('progressText');
+
+                for (let num = startNum; num <= endNum; num++) {
+                    if (!this.isRunning) break;
+
+                    const numberStr = num.toString().padStart(5, '0');
+                    progressText.textContent = `Ricerca ricorso ${year}${numberStr}...`;
+
+                    // Simulate random findings (for demo purposes)
+                    if (Math.random() < 0.05) { // 5% chance of finding a keyword
+                        const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
+                        if (!this.results[randomKeyword]) {
+                            this.results[randomKeyword] = [];
+                        }
+                        this.results[randomKeyword].push(numberStr);
+                    }
+
+                    this.currentProgress++;
+                    const percentage = (this.currentProgress / this.totalSearches) * 100;
+                    progressFill.style.width = percentage + '%';
+                    progressStatus.textContent = `${this.currentProgress} / ${this.totalSearches} ricorsi processati`;
+
+                    // Simulate processing time
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
+
+            start() {
+                this.isRunning = true;
+            }
+
+            stop() {
+                this.isRunning = false;
+            }
+        }
+
+        const scraper = new GiustiziaScraperSimulator();
+
+        document.getElementById('scraperForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const year = parseInt(formData.get('year'));
+            const startNum = parseInt(formData.get('startNum'));
+            const endNum = parseInt(formData.get('endNum'));
+            const precision = parseInt(formData.get('precision'));
+            const keywordsText = formData.get('keywords').trim();
+            
+            if (!keywordsText) {
+                alert('Inserisci almeno una parola chiave!');
+                return;
+            }
+
+            if (startNum > endNum) {
+                alert('Il numero iniziale deve essere minore o uguale al numero finale!');
+                return;
+            }
+
+            const keywords = keywordsText.split('\n').filter(k => k.trim()).map(k => k.trim().toLowerCase());
+            
+            // Show progress container
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('resultsContainer').style.display = 'none';
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
+            
+            scraper.start();
+            await scraper.simulateSearch(year, startNum, endNum, keywords, precision);
+            
+            // Show results
+            displayResults(scraper.results, year);
+            
+            // Reset UI
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('startBtn').textContent = '🔍 Avvia Ricerca';
+        });
+
+        function displayResults(results, year) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsBody = document.getElementById('resultsBody');
+            const resultsCount = document.getElementById('resultsCount');
+            
+            resultsBody.innerHTML = '';
+            
+            const totalMatches = Object.values(results).reduce((sum, arr) => sum + arr.length, 0);
+            
+            if (totalMatches === 0) {
+                resultsBody.innerHTML = '<tr><td colspan="3" class="no-results">Nessun risultato trovato</td></tr>';
+                resultsCount.textContent = 'Nessun ricorso trovato con le parole chiave specificate.';
+            } else {
+                Object.entries(results).forEach(([keyword, numbers]) => {
+                    numbers.forEach(numberStr => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td><span class="keyword-tag">${keyword}</span></td>
+                            <td><span class="case-number">${year}${numberStr}</span></td>
+                            <td>${year}</td>
+                        `;
+                        resultsBody.appendChild(row);
+                    });
+                });
+                
+                resultsCount.textContent = `Trovati ${totalMatches} risultati in ${Object.keys(results).length} parole chiave diverse.`;
+            }
+            
+            resultsContainer.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
