@@ -233,3 +233,19 @@ textarea {
         padding: 20px;
     }
 }
+
+.log-box {
+    border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: scroll;
+    }
+.log-entry {
+    margin-bottom: 5px;
+}
+.match {
+    background-color: #d4edda; padding: 5px; border: 1px solid #c3e6cb;
+}
+.timeout {
+    background-color: #f8d7da; padding: 5px; border: 1px solid #f5c6cb; color: #721c24;
+}
+.raw {
+    background-color: #e2e3e5; padding: 5px; border: 1px solid #d6d8db; font-family: monospace;
+}

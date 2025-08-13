@@ -69,15 +69,7 @@ def match_keyword(keyword, text, threshold=75):
 
     return False, best_score, 'none'
 
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-import time
-import logging
-
-logger = logging.getLogger(__name__)
-
 def scrape(self, year, start_num, end_num, keywords, fuzz_threshold):
-    from rapidfuzz import fuzz
-
     start_time = time.time()
     self.current_progress = 0
     self.total_searches = end_num - start_num + 1
