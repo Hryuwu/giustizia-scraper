@@ -27,7 +27,7 @@ class GiustiziaScraper:
         self.current_progress = 0
         self.total_searches = 0
         
-    def scrape(self, year, start_num, end_num, keywords, precision):
+def scrape(self, year, start_num, end_num, keywords, precision):
     """Main scraping function"""
 
     BASE_URL = "https://www.giustizia-amministrativa.it/web/guest/ricorsi-cds"
