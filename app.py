@@ -69,152 +69,95 @@ def match_keyword(keyword, text, threshold=75):
 
     return False, best_score, 'none'
 
-def scrape(self, year, start_num, end_num, keywords, precision):
-    """Main scraping function"""
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+import time
+import logging
 
-    BASE_URL = "https://www.giustizia-amministrativa.it/web/guest/ricorsi-cds"
-    self.total_searches = end_num - start_num + 1
+logger = logging.getLogger(__name__)
+
+def scrape(self, year, start_num, end_num, keywords, fuzz_threshold):
+    from rapidfuzz import fuzz
+
+    start_time = time.time()
     self.current_progress = 0
-    self.results = {}
-    self.is_running = True
+    self.total_searches = end_num - start_num + 1
 
-    socketio.emit('progress_update', {
-        'current': 0,
-        'total': self.total_searches,
-        'percentage': 0,
-        'status': 'Inizializzo il browser...'
-    }, room=self.session_id)
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
+        page = browser.new_page(ignore_https_errors=True)
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
-            page = browser.new_page(ignore_https_errors=True)
+        for num in range(start_num, end_num + 1):
+            elapsed = time.time() - start_time
+            number_str = f"{num:05d}"
 
-            for num in range(start_num, end_num + 1):
-                if not self.is_running:
-                    break
-
-                number_str = f"{num:05d}"
-
-                # Emit progress update
-                socketio.emit('progress_update', {
-                    'current': self.current_progress,
-                    'total': self.total_searches,
-                    'percentage': (self.current_progress / self.total_searches) * 100,
-                    'status': f'Ricerca ricorso {year}{number_str}...'
-                }, room=self.session_id)
-
-                try:
-                    # Retry page load up to 3 times
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            page.goto(BASE_URL, wait_until="networkidle", timeout=15000)
-                            break
-                        except Exception as e:
-                            if attempt == max_retries - 1:
-                                raise
-                            logger.warning(f"Retry {attempt + 1} loading page for {year}{number_str}: {e}")
-                            time.sleep(1)
-
-                    # Wait for form ready
-                    page.wait_for_selector(
-                        'select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year',
-                        timeout=10000)
-
-                    # Clear cookies and storage to avoid stale session state
-                    page.context.clear_cookies()
-                    page.evaluate("() => localStorage.clear()")
-                    page.evaluate("() => sessionStorage.clear()")
-
-                    # Fill in year and number fields
-                    page.select_option(
-                        'select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year',
-                        str(year))
-                    number_input = page.locator(
-                        'input[name*="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number"]')
-                    number_input.fill(number_str)
-
-                    # Click the search button
-                    search_button = page.locator(
-                        'button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
-                    search_button.click()
-
-                    # Wait for the results or a no-result indication
-                    try:
-                        page.wait_for_selector('#valoreOggetto', timeout=15000)
-                    except PlaywrightTimeoutError:
-                        logger.warning(f"No results or timeout waiting for #valoreOggetto in {year}{number_str}")
-                        self.current_progress += 1
-                        continue
-
-                    # Wait until #valoreOggetto has non-empty text
-                    try:
-                        page.wait_for_function(
-                            """() => {
-                                const el = document.querySelector('#valoreOggetto');
-                                return el && el.innerText && el.innerText.trim().length > 0;
-                            }""",
-                            timeout=3000)
-                    except PlaywrightTimeoutError:
-                        logger.warning(f"Empty or missing content after wait_for_function for {year}{number_str}")
-
-                    # Get text content and normalize for matching
-                    text_content = page.inner_text('#valoreOggetto').lower().strip()
-
-                    if not text_content:
-                        logger.info(f"No content for {year}{number_str}")
-                        self.current_progress += 1
-                        continue
-
-                    logger.info(f"Processing {year}{number_str}, content length: {len(text_content)}")
-
-                    found_in_this_case = False
-                    for keyword in keywords:
-                        matched, score, method = match_keyword(keyword, text_content, threshold=precision)
-                        if matched:
-                            if keyword not in self.results:
-                                self.results[keyword] = []
-                            if number_str not in self.results[keyword]:
-                                self.results[keyword].append(number_str)
-                            found_in_this_case = True
-                            logger.info(f"FOUND: '{keyword}' in {year}{number_str} (score: {score}, method: {method})")
-
-                            socketio.emit('result_found', {
-                                'keyword': keyword,
-                                'case_number': f'{year}{number_str}',
-                                'year': year,
-                                'match_score': score,
-                                'match_method': method
-                            }, room=self.session_id)
-
-                    if not found_in_this_case:
-                        logger.debug(f"No keywords found in {year}{number_str}")
-
-                except Exception as e:
-                    logger.error(f"Error processing {year}{number_str}: {e}")
-
-                self.current_progress += 1
-                # Delay between requests to be polite and avoid rate limits
-                time.sleep(random.uniform(1.0, 2.0))
-
-            browser.close()
-
-            # Emit scrape complete with results summary
-            socketio.emit('scraping_complete', {
-                'results': self.results,
-                'total_found': sum(len(numbers) for numbers in self.results.values())
+            # Progress update with elapsed time
+            self.socketio.emit('progress_update', {
+                'current': self.current_progress,
+                'total': self.total_searches,
+                'percentage': (self.current_progress / self.total_searches) * 100,
+                'status': f'Ricerca ricorso {year}{number_str}... Tempo trascorso: {elapsed:.1f}s'
             }, room=self.session_id)
 
-    except Exception as e:
-        logger.error(f"Scraping error: {str(e)}")
-        socketio.emit('scraping_error', {'error': str(e)}, room=self.session_id)
+            try:
+                # Go to search page
+                page.goto(self.base_url, wait_until="domcontentloaded")
 
-    finally:
-        self.is_running = False
-        if self.session_id in scraping_sessions:
-            del scraping_sessions[self.session_id]
+                # Select year and fill number
+                page.select_option(
+                    'select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year',
+                    str(year)
+                )
+                page.fill(
+                    'input#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number',
+                    number_str
+                )
 
+                # Click search
+                page.click(
+                    'button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]'
+                )
+
+                # Wait for valoreOggetto
+                try:
+                    page.wait_for_selector('#valoreOggetto', timeout=15000)
+                except PlaywrightTimeoutError:
+                    logger.warning(f"Timeout: #valoreOggetto not found for {year}{number_str}")
+                    self.socketio.emit('timeout_warning', {
+                        'case_number': f'{year}{number_str}',
+                        'reason': 'valoreOggetto not found in time'
+                    }, room=self.session_id)
+                    self.current_progress += 1
+                    continue
+
+                # Get raw valoreOggetto text
+                text_content = page.inner_text('#valoreOggetto').strip()
+
+                # Emit raw content to frontend
+                self.socketio.emit('raw_content', {
+                    'case_number': f'{year}{number_str}',
+                    'content': text_content
+                }, room=self.session_id)
+
+                # Fuzz matching
+                for keyword in keywords:
+                    score = fuzz.partial_ratio(keyword.lower(), text_content.lower())
+                    if score >= fuzz_threshold:
+                        self.socketio.emit('match_found', {
+                            'case_number': f'{year}{number_str}',
+                            'keyword': keyword,
+                            'score': score,
+                            'content': text_content
+                        }, room=self.session_id)
+
+                # Delay between searches
+                time.sleep(2.5)
+
+            except Exception as e:
+                logger.error(f"Error on {year}{number_str}: {e}")
+
+            self.current_progress += 1
+
+        browser.close()
 
 @app.route('/')
 def index():
