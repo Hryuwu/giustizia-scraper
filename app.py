@@ -81,10 +81,12 @@ class GiustiziaScraper:
                     page.click('button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"], input[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
 
                     # 4) wait for the result content
+                    test_logging
                     try:
-                        page.wait_for_selector("#valoreOggetto", timeout=15000)
+                        test_logging = page.wait_for_selector("#valoreOggetto", timeout=15000)
                     except PlaywrightTimeoutError:
-                        logger.warning("Timeout: #valoreOggetto missing for %s%s", year, number_str)
+                        # logger.warning("Timeout: #valoreOggetto missing for %s%s", year, number_str)
+                        logger.warning(test_logging)
                         self.emit("timeout_warning", {
                             "case_number": f"{year}{number_str}",
                             "reason": "valoreOggetto non trovato entro il tempo limite"
