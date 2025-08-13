@@ -2,20 +2,14 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Ricerca Ricorsi</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .log-box { border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: scroll; }
-        .log-entry { margin-bottom: 5px; }
-        .match { background-color: #d4edda; padding: 5px; border: 1px solid #c3e6cb; }
-        .timeout { background-color: #f8d7da; padding: 5px; border: 1px solid #f5c6cb; color: #721c24; }
-        .raw { background-color: #e2e3e5; padding: 5px; border: 1px solid #d6d8db; font-family: monospace; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giustizia Scraper</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <h1>Ricerca Ricorsi</h1>
 
-    <!-- Your existing form -->
+    <!-- Form with textarea for keywords -->
     <form id="search-form">
         <label>Anno:
             <input type="number" id="year" name="year" required>
@@ -26,8 +20,8 @@
         <label>Numero finale:
             <input type="number" id="end_num" name="end_num" required>
         </label>
-        <label>Keywords file:
-            <input type="file" id="keywords" name="keywords" required>
+        <label>Keywords (una per riga):
+            <textarea id="keywords" name="keywords" placeholder="Inserisci una parola per riga"></textarea>
         </label>
         <label>Soglia Fuzz:
             <input type="number" id="fuzz_threshold" name="fuzz_threshold" value="80" required>
@@ -58,13 +52,11 @@
     <script>
         const socket = io();
 
-        // Progress update with elapsed time
         socket.on('progress_update', data => {
             document.getElementById('progress-text').innerText =
                 `${data.percentage.toFixed(2)}% - ${data.status}`;
         });
 
-        // Timeout warnings
         socket.on('timeout_warning', data => {
             const log = document.getElementById('timeout-log');
             const entry = document.createElement('div');
@@ -74,7 +66,6 @@
             log.scrollTop = log.scrollHeight;
         });
 
-        // Raw valoreOggetto
         socket.on('raw_content', data => {
             const log = document.getElementById('raw-log');
             const entry = document.createElement('div');
@@ -84,7 +75,6 @@
             log.scrollTop = log.scrollHeight;
         });
 
-        // Matches found
         socket.on('match_found', data => {
             const log = document.getElementById('matches-log');
             const entry = document.createElement('div');
@@ -94,25 +84,20 @@
             log.scrollTop = log.scrollHeight;
         });
 
-        // Handle form submission (send to backend via Socket.IO)
+        // Handle form submit
         document.getElementById('search-form').addEventListener('submit', e => {
             e.preventDefault();
-
             const formData = new FormData(e.target);
+
             const payload = {
                 year: formData.get('year'),
                 start_num: parseInt(formData.get('start_num')),
                 end_num: parseInt(formData.get('end_num')),
-                fuzz_threshold: parseInt(formData.get('fuzz_threshold'))
+                fuzz_threshold: parseInt(formData.get('fuzz_threshold')),
+                keywords: formData.get('keywords').split('\n').map(k => k.trim()).filter(Boolean)
             };
 
-            const file = formData.get('keywords');
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                payload.keywords = evt.target.result.split('\n').map(k => k.trim()).filter(Boolean);
-                socket.emit('start_search', payload);
-            };
-            reader.readAsText(file);
+            socket.emit('start_search', payload);
         });
     </script>
 </body>
