@@ -99,7 +99,7 @@ class GiustiziaScraper:
                             page.wait_for_selector('#valoreOggetto', timeout=15000)
                             
                             # Wait a bit more to ensure content is fully loaded
-                            time.sleep(1)
+                            time.sleep(5)
                             
                             # Get text content with error handling
                             text_content = ""
