@@ -114,10 +114,6 @@
     // Progress updates (with elapsed time)
     socket.on('progress_update', (data) => {
       const pct = Math.max(0, Math.min(100, data.percentage || 0));
-      document.getElementById('progressContainer').style.display = 'block';
-      document.getElementById('resultsContainer').style.display = 'none';
-      document.getElementById('startBtn').disabled = true;
-      document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
       document.getElementById('progress-bar').value = pct;
       document.getElementById('progress-text').textContent =
         `${pct.toFixed(1)}% — ${data.status || ''}`;
@@ -174,6 +170,10 @@
       document.getElementById('timeout-log').innerHTML = '';
       document.getElementById('raw-log').innerHTML = '';
       document.getElementById('matches-log').innerHTML = '';
+      document.getElementById('progressContainer').style.display = 'block';
+      document.getElementById('resultsContainer').style.display = 'none';
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
       document.getElementById('progress-bar').value = 0;
       document.getElementById('progress-text').textContent = '0% — avviato';
 
