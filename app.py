@@ -81,9 +81,8 @@ class GiustiziaScraper:
                     page.click('button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"], input[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
 
                     # 4) wait for the result content
-                    test_logging
                     try:
-                        test_logging = page.wait_for_selector("#valoreOggetto", timeout=15000)
+                        page.wait_for_selector("#valoreOggetto", timeout=15000)
                     except PlaywrightTimeoutError:
                         # logger.warning("Timeout: #valoreOggetto missing for %s%s", year, number_str)
                         logger.warning(test_logging)
@@ -118,7 +117,7 @@ class GiustiziaScraper:
                                     "content": raw
                                 })
                                 # you can break if you only care about first match
-                                # break
+                                break
 
                     # 7) slow down slightly for stability
                     time.sleep(2.0)
