@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,107 +7,147 @@
     <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
-    <h1>Ricerca Ricorsi</h1>
-
-    <!-- Your existing form -->
-    <form id="search-form">
-        <label>Anno:
-            <input type="number" id="year" name="year" required>
-        </label>
-        <label>Numero iniziale:
-            <input type="number" id="start_num" name="start_num" required>
-        </label>
-        <label>Numero finale:
-            <input type="number" id="end_num" name="end_num" required>
-        </label>
-        <label>Keywords file:
-            <input type="file" id="keywords" name="keywords" required>
-        </label>
-        <label>Soglia Fuzz:
-            <input type="number" id="fuzz_threshold" name="fuzz_threshold" value="80" required>
-        </label>
-        <button type="submit">Avvia ricerca</button>
-    </form>
-
-    <hr>
-
-    <!-- Progress -->
-    <div>
-        <strong>Progress:</strong> <span id="progress-text">0%</span>
+    <div class="container">
+        <div class="header">
+            <h1>🏛️ Giustizia Scraper</h1>
+            <p>Cerca ricorsi nel database del Consiglio di Stato</p>
+        </div>
+        
+        <div class="form-container">
+            <form id="scraperForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="year">Anno:</label>
+                        <input type="number" id="yearInput" name="year" min="2000" max="2025" value="2024" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="precision">Precisione ricerca (0-100):</label>
+                        <input type="number" id="precisionInput" name="precision" min="0" max="100" value="90" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="startNum">Numero iniziale:</label>
+                        <input type="number" id="startNumInput" name="startNum" min="1" value="1" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="endNum">Numero finale:</label>
+                        <input type="number" id="endNumInput" name="endNum" min="1" value="100" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="keywords">Parole chiave (una per riga):</label>
+                    <textarea id="keywords" name="keywordsInput" placeholder="Inserisci le parole chiave da cercare, una per riga..." required></textarea>
+                </div>
+                
+                <div class="btn-container">
+                    <button type="submit" class="btn-primary" id="startBtn">🔍 Avvia Ricerca</button>
+                </div>
+            </form>
+            
+            <div class="progress-container" id="progressContainer">
+                <h3 id="progressText">Ricerca in corso...</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p id="progressStatus">0 / 0 ricorsi processati</p>
+            </div>
+        </div>
+        
+        <div class="results-container" id="resultsContainer">
+            <div class="results-header">
+                <h2>📋 Risultati della Ricerca</h2>
+                <p id="resultsCount"></p>
+            </div>
+            
+            <table class="results-table" id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Parola Chiave</th>
+                        <th>Numero Ricorso</th>
+                        <th>Anno</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                </tbody>
+            </table>
+        </div>
     </div>
+<!-- Add this in the <head> or just before closing </body> -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const socket = io();
 
-    <!-- Timeout Warnings -->
-    <h2>Timeout Warnings</h2>
-    <div id="timeout-log" class="log-box"></div>
+    // Example: when user clicks "Start Scrape" button
+    document.getElementById("startScrapeBtn").addEventListener("click", function () {
+      const year = document.getElementById("yearInput").value;
+      const startNum = parseInt(document.getElementById("startNumInput").value, 10);
+      const endNum = parseInt(document.getElementById("endNumInput").value, 10);
+      const keywords = document.getElementById("keywordsInput").value.split(",").map(k => k.trim());
+      const precision = parseInt(document.getElementById("precisionInput").value, 10);
 
-    <!-- Raw valoreOggetto -->
-    <h2>Raw valoreOggetto</h2>
-    <div id="raw-log" class="log-box"></div>
+      // Send start event to backend
+      socket.emit("start_scrape", { year, startNum, endNum, keywords, precision });
+      
+      // Clear previous output
+      clearResults();
+    });
 
-    <!-- Matches -->
-    <h2>Matches</h2>
-    <div id="matches-log" class="log-box"></div>
+    // Receive progress updates from backend
+    socket.on("progress_update", function(data) {
+      updateProgress(data.current, data.total, data.percentage, data.status);
+    });
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
-    <script>
-        const socket = io();
+    // Receive keyword hit results
+    socket.on("result_found", function(data) {
+      addResult(data.keyword, data.case_number, data.match_score, data.match_method);
+    });
 
-        // Progress update with elapsed time
-        socket.on('progress_update', data => {
-            document.getElementById('progress-text').innerText =
-                `${data.percentage.toFixed(2)}% - ${data.status}`;
-        });
+    // Scraping complete event
+    socket.on("scraping_complete", function(data) {
+      showCompleteMessage(data.total_found);
+    });
+    
+    // Scraping error event
+    socket.on("scraping_error", function(data) {
+      showError(data.error);
+    });
 
-        // Timeout warnings
-        socket.on('timeout_warning', data => {
-            const log = document.getElementById('timeout-log');
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry', 'timeout');
-            entry.innerText = `⚠️ Timeout on ${data.case_number}: ${data.reason}`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        });
-
-        // Raw valoreOggetto
-        socket.on('raw_content', data => {
-            const log = document.getElementById('raw-log');
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry', 'raw');
-            entry.innerText = `[${data.case_number}] ${data.content}`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        });
-
-        // Matches found
-        socket.on('match_found', data => {
-            const log = document.getElementById('matches-log');
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry', 'match');
-            entry.innerText = `✅ Match in ${data.case_number} — Keyword: "${data.keyword}" (Score: ${data.score})`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        });
-
-        // Handle form submission (send to backend via Socket.IO)
-        document.getElementById('search-form').addEventListener('submit', e => {
-            e.preventDefault();
-
-            const formData = new FormData(e.target);
-            const payload = {
-                year: formData.get('year'),
-                start_num: parseInt(formData.get('start_num')),
-                end_num: parseInt(formData.get('end_num')),
-                fuzz_threshold: parseInt(formData.get('fuzz_threshold'))
-            };
-
-            const file = formData.get('keywords');
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                payload.keywords = evt.target.result.split('\n').map(k => k.trim()).filter(Boolean);
-                socket.emit('start_search', payload);
-            };
-            reader.readAsText(file);
-        });
-    </script>
+    // Add helper functions:
+    function updateProgress(current, total, percentage, status) {
+      // Update progress bar and status text in your page
+      document.getElementById("progressBar").value = percentage;
+      document.getElementById("statusText").textContent = status;
+      document.getElementById("progressText").textContent = `${current} / ${total}`;
+    }
+    
+    function addResult(keyword, caseNumber, score, method) {
+      const resultsDiv = document.getElementById("results");
+      const item = document.createElement("div");
+      item.textContent = `Keyword "${keyword}" found in case ${caseNumber} (score: ${score}, method: ${method})`;
+      resultsDiv.appendChild(item);
+    }
+    
+    function showCompleteMessage(totalFound) {
+      alert(`Scraping complete! Total matches found: ${totalFound}`);
+    }
+    
+    function showError(errorMsg) {
+      alert(`Error during scraping: ${errorMsg}`);
+    }
+    
+    function clearResults() {
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("progressBar").value = 0;
+      document.getElementById("statusText").textContent = "";
+      document.getElementById("progressText").textContent = "";
+    }
+  });
+</script>
 </body>
 </html>
