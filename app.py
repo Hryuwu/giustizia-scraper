@@ -64,40 +64,102 @@ class GiustiziaScraper:
                     }, room=self.session_id)
                     
                     try:
-                        page.goto(BASE_URL, wait_until="domcontentloaded")
+                        # More robust page loading with retries
+                        max_retries = 3
+                        for attempt in range(max_retries):
+                            try:
+                                page.goto(BASE_URL, wait_until="networkidle", timeout=15000)
+                                break
+                            except:
+                                if attempt == max_retries - 1:
+                                    raise
+                                logger.warning(f"Retry {attempt + 1} for loading page")
+                                time.sleep(1)
                         
-                        # Fill the form
+                        # Wait for form to be ready
+                        page.wait_for_selector('select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year', timeout=10000)
+                        
+                        # Fill the form with better error handling
                         page.select_option('select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year', str(year))
-                        page.fill('input[name*="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number"]', number_str)
                         
-                        # Click search
-                        page.click('button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
+                        # Clear and fill the number field
+                        number_input = page.locator('input[name*="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number"]')
+                        number_input.clear()
+                        number_input.fill(number_str)
                         
-                        # Wait for results
-                        page.wait_for_selector('#valoreOggetto', timeout=10000)
-                        text_content = page.inner_text('#valoreOggetto').lower()
+                        # Wait a bit before clicking search
+                        time.sleep(0.5)
                         
-                        # Check for keywords
-                        for keyword in keywords:
-                            score = fuzz.partial_ratio(keyword, text_content)
-                            if score >= precision:
-                                if keyword not in self.results:
-                                    self.results[keyword] = []
-                                self.results[keyword].append(number_str)
+                        # Click search with retry logic
+                        search_button = page.locator('button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
+                        search_button.click()
+                        
+                        # Wait for results with longer timeout and better error handling
+                        try:
+                            page.wait_for_selector('#valoreOggetto', timeout=15000)
+                            
+                            # Wait a bit more to ensure content is fully loaded
+                            time.sleep(1)
+                            
+                            # Get text content with error handling
+                            text_content = ""
+                            try:
+                                text_content = page.inner_text('#valoreOggetto').lower()
+                            except:
+                                # Fallback: try to get any visible text
+                                text_content = page.text_content('#valoreOggetto').lower() if page.query_selector('#valoreOggetto') else ""
+                            
+                            if not text_content.strip():
+                                logger.warning(f"Empty content for {year}{number_str}")
+                                continue
                                 
-                                # Emit found result
-                                socketio.emit('result_found', {
-                                    'keyword': keyword,
-                                    'case_number': f'{year}{number_str}',
-                                    'year': year
-                                }, room=self.session_id)
+                            # Debug logging
+                            logger.info(f"Processing {year}{number_str}, content length: {len(text_content)}")
+                            
+                            # Check for keywords with improved logic
+                            found_in_this_case = False
+                            for keyword in keywords:
+                                # Try multiple matching approaches
+                                score = fuzz.partial_ratio(keyword, text_content)
+                                
+                                # Also try exact substring match (more reliable)
+                                exact_match = keyword in text_content
+                                
+                                if score >= precision or exact_match:
+                                    if keyword not in self.results:
+                                        self.results[keyword] = []
+                                    
+                                    # Avoid duplicates
+                                    if number_str not in self.results[keyword]:
+                                        self.results[keyword].append(number_str)
+                                        found_in_this_case = True
+                                        
+                                        logger.info(f"FOUND: '{keyword}' in {year}{number_str} (score: {score}, exact: {exact_match})")
+                                        
+                                        # Emit found result
+                                        socketio.emit('result_found', {
+                                            'keyword': keyword,
+                                            'case_number': f'{year}{number_str}',
+                                            'year': year,
+                                            'match_score': score,
+                                            'exact_match': exact_match
+                                        }, room=self.session_id)
+                            
+                            if not found_in_this_case:
+                                logger.debug(f"No keywords found in {year}{number_str}")
+                                
+                        except Exception as wait_error:
+                            logger.warning(f"No results found for {year}{number_str}: {str(wait_error)}")
+                            continue
                                 
                     except Exception as e:
                         logger.error(f"Error processing {year}{number_str}: {str(e)}")
+                        # Continue with next case instead of stopping
+                        continue
                     
                     self.current_progress += 1
-                    # Reduce sleep time for faster processing on cloud
-                    time.sleep(random.uniform(0.2, 0.5))
+                    # Longer sleep to be more respectful to the server and more reliable
+                    time.sleep(random.uniform(0.8, 1.5))
                 
                 browser.close()
                 
