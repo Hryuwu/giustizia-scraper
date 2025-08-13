@@ -26,7 +26,49 @@ class GiustiziaScraper:
         self.results = {}
         self.current_progress = 0
         self.total_searches = 0
-        
+
+def match_keyword(keyword, text, threshold=75):
+    """
+    Try to match `keyword` inside the `text` using exact and fuzzy matching.
+    Returns (match_found: bool, best_score: int, method: str).
+
+    - Exact substring match gets priority with score 100.
+    - Uses partial_ratio, token_sort_ratio, and token_set_ratio from rapidfuzz.
+    - Logs detailed info about scores for traceability.
+    """
+
+    keyword_norm = keyword.lower().strip()
+    text_norm = text.lower().strip()
+
+    # Exact match check
+    if keyword_norm in text_norm:
+        logger.info(f"Exact match found for '{keyword}' (score=100)")
+        return True, 100, 'exact'
+
+    # Fuzzy matching
+    partial = fuzz.partial_ratio(keyword_norm, text_norm)
+    token_sort = fuzz.token_sort_ratio(keyword_norm, text_norm)
+    token_set = fuzz.token_set_ratio(keyword_norm, text_norm)
+
+    best_score = max(partial, token_sort, token_set)
+
+    logger.info(
+        f"Fuzzy match scores for '{keyword}': partial_ratio={partial}, "
+        f"token_sort_ratio={token_sort}, token_set_ratio={token_set}, best={best_score}"
+    )
+
+    if best_score >= threshold:
+        # Decide best matching method
+        if best_score == partial:
+            method = 'partial_ratio'
+        elif best_score == token_sort:
+            method = 'token_sort_ratio'
+        else:
+            method = 'token_set_ratio'
+        return True, best_score, method
+
+    return False, best_score, 'none'
+
 def scrape(self, year, start_num, end_num, keywords, precision):
     """Main scraping function"""
 
