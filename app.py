@@ -1,243 +1,186 @@
-from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
-import time
-import random
-import threading
 import os
+import time
+import logging
+import threading
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
 from rapidfuzz import fuzz
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-import logging
 
-# Set up logging
+# ----- Flask / Socket.IO setup -----
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("giustizia")
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-socketio = SocketIO(app, cors_allowed_origins="*")
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
+socketio = SocketIO(app, cors_allowed_origins="*")  # works on Railway behind proxy
 
-# Global variables to track scraping status
-scraping_sessions = {}
+BASE_URL = "https://www.giustizia-amministrativa.it/web/guest/ricorsi-cds"
 
+# ----- Scraper class -----
 class GiustiziaScraper:
-    def __init__(self, session_id):
-        self.session_id = session_id
-        self.is_running = False
-        self.results = {}
-        self.current_progress = 0
-        self.total_searches = 0
+    def __init__(self, socketio, sid):
+        self.socketio = socketio
+        self.sid = sid  # send events back only to this client
 
-def match_keyword(keyword, text, threshold=75):
+    def emit(self, event, data):
+        self.socketio.emit(event, data, to=self.sid)
+
+    def best_fuzz(self, keyword: str, text: str) -> int:
+        # robust matching using multiple algorithms
+        k = keyword.lower().strip()
+        t = text.lower().strip()
+        scores = (
+            fuzz.partial_ratio(k, t),
+            fuzz.token_set_ratio(k, t),
+            fuzz.token_sort_ratio(k, t),
+        )
+        return int(max(scores))
+
+    def scrape(self, year: int, start_num: int, end_num: int, keywords: list[str], threshold: int):
+        start_time = time.time()
+        total = max(0, end_num - start_num + 1)
+        done = 0
+
+        # Normalize keywords once
+        keywords = [k.strip() for k in keywords if k and k.strip()]
+
+        with sync_playwright() as p:
+            # Firefox tends to work well here; ignore_https_errors handles that cert issue you saw
+            browser = p.firefox.launch(headless=True)
+            page = browser.new_page(ignore_https_errors=True)
+
+            for num in range(start_num, end_num + 1):
+                number_str = f"{num:05d}"
+                elapsed = time.time() - start_time
+                pct = 0 if total == 0 else (done / total) * 100.0
+
+                self.emit("progress_update", {
+                    "current": done,
+                    "total": total,
+                    "percentage": pct,
+                    "status": f"Ricerca {year}{number_str}… Tempo trascorso: {elapsed:.1f}s"
+                })
+
+                try:
+                    # 1) open search page
+                    page.goto(BASE_URL, wait_until="domcontentloaded")
+
+                    # 2) fill/select form
+                    page.select_option(
+                        'select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year',
+                        str(year)
+                    )
+                    page.fill(
+                        'input#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number',
+                        number_str
+                    )
+
+                    # 3) click search
+                    # it's a <button name="..._search"> or <input name="..._search">
+                    page.click('button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"], input[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
+
+                    # 4) wait for the result content
+                    try:
+                        page.wait_for_selector("#valoreOggetto", timeout=15000)
+                    except PlaywrightTimeoutError:
+                        logger.warning("Timeout: #valoreOggetto missing for %s%s", year, number_str)
+                        self.emit("timeout_warning", {
+                            "case_number": f"{year}{number_str}",
+                            "reason": "valoreOggetto non trovato entro il tempo limite"
+                        })
+                        done += 1
+                        # polite delay to avoid hammering
+                        time.sleep(1.5)
+                        continue
+
+                    # 5) extract content and show it raw
+                    try:
+                        raw = (page.inner_text("#valoreOggetto") or "").strip()
+                    except Exception:
+                        raw = ""
+                    self.emit("raw_content", {
+                        "case_number": f"{year}{number_str}",
+                        "content": raw
+                    })
+
+                    # 6) fuzzy match against all keywords
+                    if raw:
+                        for kw in keywords:
+                            score = self.best_fuzz(kw, raw)
+                            if score >= threshold:
+                                self.emit("match_found", {
+                                    "case_number": f"{year}{number_str}",
+                                    "keyword": kw,
+                                    "score": score,
+                                    "content": raw
+                                })
+                                # you can break if you only care about first match
+                                # break
+
+                    # 7) slow down slightly for stability
+                    time.sleep(2.0)
+
+                except Exception as e:
+                    logger.exception("Errore su %s%s: %s", year, number_str, e)
+
+                finally:
+                    done += 1
+                    # update progress after finishing this iteration
+                    pct = 0 if total == 0 else (done / total) * 100.0
+                    self.emit("progress_update", {
+                        "current": done,
+                        "total": total,
+                        "percentage": pct,
+                        "status": f"Completato {year}{number_str}"
+                    })
+
+            browser.close()
+
+# ----- Flask routes & Socket.IO events -----
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@socketio.on("connect")
+def on_connect():
+    logger.info("Client connected: %s", request.sid)
+    emit("progress_update", {"percentage": 0, "status": "Connesso"})
+
+@socketio.on("disconnect")
+def on_disconnect():
+    logger.info("Client disconnected: %s", request.sid)
+
+@socketio.on("start_search")
+def on_start_search(data):
     """
-    Try to match `keyword` inside the `text` using exact and fuzzy matching.
-    Returns (match_found: bool, best_score: int, method: str).
-
-    - Exact substring match gets priority with score 100.
-    - Uses partial_ratio, token_sort_ratio, and token_set_ratio from rapidfuzz.
-    - Logs detailed info about scores for traceability.
+    Payload from the page:
+      {
+        year: 2025,
+        start_num: 1,
+        end_num: 50,
+        fuzz_threshold: 80,
+        keywords: ["parola1", "parola2", ...]
+      }
     """
+    try:
+        year = int(data.get("year"))
+        start_num = int(data.get("start_num"))
+        end_num = int(data.get("end_num"))
+        threshold = int(data.get("fuzz_threshold", 80))
+        keywords = data.get("keywords", [])
+    except Exception:
+        emit("timeout_warning", {"case_number": "N/A", "reason": "Parametri non validi"})
+        return
 
-    keyword_norm = keyword.lower().strip()
-    text_norm = text.lower().strip()
-
-    # Exact match check
-    if keyword_norm in text_norm:
-        logger.info(f"Exact match found for '{keyword}' (score=100)")
-        return True, 100, 'exact'
-
-    # Fuzzy matching
-    partial = fuzz.partial_ratio(keyword_norm, text_norm)
-    token_sort = fuzz.token_sort_ratio(keyword_norm, text_norm)
-    token_set = fuzz.token_set_ratio(keyword_norm, text_norm)
-
-    best_score = max(partial, token_sort, token_set)
-
-    logger.info(
-        f"Fuzzy match scores for '{keyword}': partial_ratio={partial}, "
-        f"token_sort_ratio={token_sort}, token_set_ratio={token_set}, best={best_score}"
+    scraper = GiustiziaScraper(socketio, request.sid)
+    # Run in a background task so we don't block the Socket.IO server
+    socketio.start_background_task(
+        scraper.scrape, year, start_num, end_num, keywords, threshold
     )
 
-    if best_score >= threshold:
-        # Decide best matching method
-        if best_score == partial:
-            method = 'partial_ratio'
-        elif best_score == token_sort:
-            method = 'token_sort_ratio'
-        else:
-            method = 'token_set_ratio'
-        return True, best_score, method
-
-    return False, best_score, 'none'
-
-def scrape(self, year, start_num, end_num, keywords, fuzz_threshold):
-    start_time = time.time()
-    self.current_progress = 0
-    self.total_searches = end_num - start_num + 1
-
-    with sync_playwright() as p:
-        browser = p.firefox.launch(headless=True)
-        page = browser.new_page(ignore_https_errors=True)
-
-        for num in range(start_num, end_num + 1):
-            elapsed = time.time() - start_time
-            number_str = f"{num:05d}"
-
-            # Progress update with elapsed time
-            self.socketio.emit('progress_update', {
-                'current': self.current_progress,
-                'total': self.total_searches,
-                'percentage': (self.current_progress / self.total_searches) * 100,
-                'status': f'Ricerca ricorso {year}{number_str}... Tempo trascorso: {elapsed:.1f}s'
-            }, room=self.session_id)
-
-            try:
-                # Go to search page
-                page.goto(self.base_url, wait_until="domcontentloaded")
-
-                # Select year and fill number
-                page.select_option(
-                    'select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year',
-                    str(year)
-                )
-                page.fill(
-                    'input#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number',
-                    number_str
-                )
-
-                # Click search
-                page.click(
-                    'button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]'
-                )
-
-                # Wait for valoreOggetto
-                try:
-                    page.wait_for_selector('#valoreOggetto', timeout=15000)
-                except PlaywrightTimeoutError:
-                    logger.warning(f"Timeout: #valoreOggetto not found for {year}{number_str}")
-                    self.socketio.emit('timeout_warning', {
-                        'case_number': f'{year}{number_str}',
-                        'reason': 'valoreOggetto not found in time'
-                    }, room=self.session_id)
-                    self.current_progress += 1
-                    continue
-
-                # Get raw valoreOggetto text
-                text_content = page.inner_text('#valoreOggetto').strip()
-
-                # Emit raw content to frontend
-                self.socketio.emit('raw_content', {
-                    'case_number': f'{year}{number_str}',
-                    'content': text_content
-                }, room=self.session_id)
-
-                # Fuzz matching
-                for keyword in keywords:
-                    score = fuzz.partial_ratio(keyword.lower(), text_content.lower())
-                    if score >= fuzz_threshold:
-                        self.socketio.emit('match_found', {
-                            'case_number': f'{year}{number_str}',
-                            'keyword': keyword,
-                            'score': score,
-                            'content': text_content
-                        }, room=self.session_id)
-
-                # Delay between searches
-                time.sleep(2.5)
-
-            except Exception as e:
-                logger.error(f"Error on {year}{number_str}: {e}")
-
-            self.current_progress += 1
-
-        browser.close()
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/start_scraping', methods=['POST'])
-def start_scraping():
-    try:
-        data = request.get_json()
-        
-        # Validate input
-        year = int(data['year'])
-        start_num = int(data['startNum'])
-        end_num = int(data['endNum'])
-        precision = int(data['precision'])
-        keywords = [kw.strip().lower() for kw in data['keywords'].split('\n') if kw.strip()]
-        session_id = data.get('sessionId', 'default')
-        
-        if not keywords:
-            return jsonify({'error': 'No keywords provided'}), 400
-        
-        if start_num > end_num:
-            return jsonify({'error': 'Start number must be less than or equal to end number'}), 400
-        
-        # Limit range to prevent abuse (optional)
-        if end_num - start_num > 10000:
-            return jsonify({'error': 'Range too large. Please limit to 10,000 records at a time.'}), 400
-        
-        # Check if already scraping
-        if session_id in scraping_sessions:
-            return jsonify({'error': 'Scraping already in progress'}), 400
-        
-        # Create scraper instance
-        scraper = GiustiziaScraper(session_id)
-        scraping_sessions[session_id] = scraper
-        
-        # Start scraping in background thread
-        thread = threading.Thread(
-            target=scraper.scrape,
-            args=(year, start_num, end_num, keywords, precision)
-        )
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({'message': 'Scraping started successfully', 'sessionId': session_id})
-        
-    except Exception as e:
-        logger.error(f"Error starting scraping: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/stop_scraping', methods=['POST'])
-def stop_scraping():
-    try:
-        data = request.get_json()
-        session_id = data.get('sessionId', 'default')
-        
-        if session_id in scraping_sessions:
-            scraping_sessions[session_id].is_running = False
-            del scraping_sessions[session_id]
-            return jsonify({'message': 'Scraping stopped'})
-        else:
-            return jsonify({'error': 'No active scraping session found'}), 404
-            
-    except Exception as e:
-        logger.error(f"Error stopping scraping: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'healthy', 'active_sessions': len(scraping_sessions)})
-
-@socketio.on('connect')
-def handle_connect():
-    logger.info(f'Client connected: {request.sid}')
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    logger.info(f'Client disconnected: {request.sid}')
-
-@socketio.on('join_session')
-def handle_join_session(data):
-    session_id = data.get('sessionId', 'default')
-    # Join the client to a room for their session
-    from flask_socketio import join_room
-    join_room(session_id)
-    emit('joined_session', {'sessionId': session_id})
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    # For production deployment, use allow_unsafe_werkzeug=True or use gunicorn
-    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
+    # socketio.run chooses the best async mode (eventlet/gevent/threading).
+    # On Railway, add 'eventlet' to requirements and it'll take it.
+    socketio.run(app, host="0.0.0.0", port=port)

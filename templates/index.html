@@ -1,104 +1,151 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giustizia Scraper</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Giustizia Scraper</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    /* Minimal debug styles; keep or move to styles.css */
+    .log-box { border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: auto; }
+    .log-entry { margin-bottom: 6px; }
+    .match { background: #d4edda; border: 1px solid #c3e6cb; padding: 6px; }
+    .timeout { background: #f8d7da; border: 1px solid #f5c6cb; color:#721c24; padding: 6px; }
+    .raw { background: #e2e3e5; border: 1px solid #d6d8db; padding: 6px; font-family: monospace; white-space: pre-wrap; }
+    .status { margin: 10px 0; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .full { grid-column: 1 / -1; }
+  </style>
 </head>
 <body>
-    <h1>Ricerca Ricorsi</h1>
+  <h1>🏛️ Giustizia Scraper</h1>
 
-    <!-- Form with textarea for keywords -->
-    <form id="search-form">
-        <label>Anno:
-            <input type="number" id="year" name="year" required>
-        </label>
-        <label>Numero iniziale:
-            <input type="number" id="start_num" name="start_num" required>
-        </label>
-        <label>Numero finale:
-            <input type="number" id="end_num" name="end_num" required>
-        </label>
-        <label>Keywords (una per riga):
-            <textarea id="keywords" name="keywords" placeholder="Inserisci una parola per riga"></textarea>
-        </label>
-        <label>Soglia Fuzz:
-            <input type="number" id="fuzz_threshold" name="fuzz_threshold" value="80" required>
-        </label>
-        <button type="submit">Avvia ricerca</button>
-    </form>
+  <!-- Connection status -->
+  <div class="status" id="conn">🟡 Connessione…</div>
 
-    <hr>
+  <!-- Your form (keywords textarea instead of file) -->
+  <form id="search-form">
+    <div class="grid">
+      <label>Anno
+        <input type="number" name="year" id="year" required />
+      </label>
+      <label>Numero iniziale
+        <input type="number" name="start_num" id="start_num" required />
+      </label>
+      <label>Numero finale
+        <input type="number" name="end_num" id="end_num" required />
+      </label>
+      <label>Soglia Fuzz
+        <input type="number" name="fuzz_threshold" id="fuzz_threshold" value="80" required />
+      </label>
 
-    <!-- Progress -->
-    <div>
-        <strong>Progress:</strong> <span id="progress-text">0%</span>
+      <label class="full">Keywords (una per riga)
+        <textarea name="keywords" id="keywords" placeholder="Una parola/frasе per riga"></textarea>
+      </label>
     </div>
+    <button type="submit">Avvia ricerca</button>
+  </form>
 
-    <!-- Timeout Warnings -->
-    <h2>Timeout Warnings</h2>
-    <div id="timeout-log" class="log-box"></div>
+  <hr/>
 
-    <!-- Raw valoreOggetto -->
-    <h2>Raw valoreOggetto</h2>
-    <div id="raw-log" class="log-box"></div>
+  <!-- Progress -->
+  <div class="status">
+    <strong>Progresso:</strong>
+    <progress id="progress-bar" max="100" value="0" style="width:240px; vertical-align: middle;"></progress>
+    <span id="progress-text">0% — in attesa…</span>
+  </div>
 
-    <!-- Matches -->
-    <h2>Matches</h2>
-    <div id="matches-log" class="log-box"></div>
+  <!-- Logs -->
+  <h2>Timeout</h2>
+  <div id="timeout-log" class="log-box"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
-    <script>
-        const socket = io();
+  <h2>Raw valoreOggetto</h2>
+  <div id="raw-log" class="log-box"></div>
 
-        socket.on('progress_update', data => {
-            document.getElementById('progress-text').innerText =
-                `${data.percentage.toFixed(2)}% - ${data.status}`;
-        });
+  <h2>Matches</h2>
+  <div id="matches-log" class="log-box"></div>
 
-        socket.on('timeout_warning', data => {
-            const log = document.getElementById('timeout-log');
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry', 'timeout');
-            entry.innerText = `⚠️ Timeout on ${data.case_number}: ${data.reason}`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        });
+  <!-- IMPORTANT: use the Socket.IO script served by Flask-SocketIO (versions match) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io({ transports: ['websocket', 'polling'] });
 
-        socket.on('raw_content', data => {
-            const log = document.getElementById('raw-log');
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry', 'raw');
-            entry.innerText = `[${data.case_number}] ${data.content}`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        });
+    // Connection state
+    socket.on('connect', () => {
+      document.getElementById('conn').textContent = '🟢 Connesso';
+    });
+    socket.on('connect_error', (err) => {
+      document.getElementById('conn').textContent = '🔴 Errore di connessione: ' + (err?.message || err);
+      console.error('connect_error', err);
+    });
+    socket.on('disconnect', () => {
+      document.getElementById('conn').textContent = '🟠 Disconnesso';
+    });
 
-        socket.on('match_found', data => {
-            const log = document.getElementById('matches-log');
-            const entry = document.createElement('div');
-            entry.classList.add('log-entry', 'match');
-            entry.innerText = `✅ Match in ${data.case_number} — Keyword: "${data.keyword}" (Score: ${data.score})`;
-            log.appendChild(entry);
-            log.scrollTop = log.scrollHeight;
-        });
+    // Progress updates (with elapsed time)
+    socket.on('progress_update', (data) => {
+      const pct = Math.max(0, Math.min(100, data.percentage || 0));
+      document.getElementById('progress-bar').value = pct;
+      document.getElementById('progress-text').textContent =
+        `${pct.toFixed(1)}% — ${data.status || ''}`;
+    });
 
-        // Handle form submit
-        document.getElementById('search-form').addEventListener('submit', e => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
+    // Timeouts
+    socket.on('timeout_warning', (data) => {
+      const log = document.getElementById('timeout-log');
+      const div = document.createElement('div');
+      div.className = 'log-entry timeout';
+      div.textContent = `⚠️ Timeout su ${data.case_number}: ${data.reason}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    });
 
-            const payload = {
-                year: formData.get('year'),
-                start_num: parseInt(formData.get('start_num')),
-                end_num: parseInt(formData.get('end_num')),
-                fuzz_threshold: parseInt(formData.get('fuzz_threshold')),
-                keywords: formData.get('keywords').split('\n').map(k => k.trim()).filter(Boolean)
-            };
+    // Raw valoreOggetto
+    socket.on('raw_content', (data) => {
+      const log = document.getElementById('raw-log');
+      const div = document.createElement('div');
+      div.className = 'log-entry raw';
+      div.textContent = `[${data.case_number}] ${data.content || '(vuoto)'}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    });
 
-            socket.emit('start_search', payload);
-        });
-    </script>
+    // Matches
+    socket.on('match_found', (data) => {
+      const log = document.getElementById('matches-log');
+      const div = document.createElement('div');
+      div.className = 'log-entry match';
+      div.textContent = `✅ Match in ${data.case_number} — "${data.keyword}" (score: ${data.score})`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    });
+
+    // Submit form -> emit start_search
+    document.getElementById('search-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const fd = new FormData(form);
+
+      const payload = {
+        year: parseInt(fd.get('year'), 10),
+        start_num: parseInt(fd.get('start_num'), 10),
+        end_num: parseInt(fd.get('end_num'), 10),
+        fuzz_threshold: parseInt(fd.get('fuzz_threshold'), 10),
+        keywords: (fd.get('keywords') || '')
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean)
+      };
+
+      // Reset logs & progress
+      document.getElementById('timeout-log').innerHTML = '';
+      document.getElementById('raw-log').innerHTML = '';
+      document.getElementById('matches-log').innerHTML = '';
+      document.getElementById('progress-bar').value = 0;
+      document.getElementById('progress-text').textContent = '0% — avviato';
+
+      socket.emit('start_search', payload);
+    });
+  </script>
 </body>
 </html>
