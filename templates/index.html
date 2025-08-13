@@ -1,61 +1,89 @@
 <!DOCTYPE html>
 <html lang="it">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Giustizia Scraper</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <style>
-    /* Minimal debug styles; keep or move to styles.css */
-    .log-box { border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: auto; }
-    .log-entry { margin-bottom: 6px; }
-    .match { background: #d4edda; border: 1px solid #c3e6cb; padding: 6px; }
-    .timeout { background: #f8d7da; border: 1px solid #f5c6cb; color:#721c24; padding: 6px; }
-    .raw { background: #e2e3e5; border: 1px solid #d6d8db; padding: 6px; font-family: monospace; white-space: pre-wrap; }
-    .status { margin: 10px 0; }
-    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
-    .full { grid-column: 1 / -1; }
-  </style>
+  <!--- <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"> --->
+  <link rel="stylesheet" href="../static/styles.css">
 </head>
+
 <body>
-  <h1>🏛️ Giustizia Scraper</h1>
-
-  <!-- Connection status -->
-  <div class="status" id="conn">🟡 Connessione…</div>
-
-  <!-- Your form (keywords textarea instead of file) -->
-  <form id="search-form">
-    <div class="grid">
-      <label>Anno
-        <input type="number" name="year" id="year" required />
-      </label>
-      <label>Numero iniziale
-        <input type="number" name="start_num" id="start_num" required />
-      </label>
-      <label>Numero finale
-        <input type="number" name="end_num" id="end_num" required />
-      </label>
-      <label>Soglia Fuzz
-        <input type="number" name="fuzz_threshold" id="fuzz_threshold" value="80" required />
-      </label>
-
-      <label class="full">Keywords (una per riga)
-        <textarea name="keywords" id="keywords" placeholder="Una parola/frasе per riga"></textarea>
-      </label>
+  <div class="container">
+    <div class="header">
+      <h1>🏛️ Giustizia Scraper</h1>
+      <p>Cerca ricorsi nel database del Consiglio di Stato</p>
     </div>
-    <button type="submit">Avvia ricerca</button>
-  </form>
 
-  <hr/>
+    <!-- Connection status -->
+    <div class="status" id="conn">🟡 Connessione…</div>
 
-  <!-- Progress -->
-  <div class="status">
-    <strong>Progresso:</strong>
-    <progress id="progress-bar" max="100" value="0" style="width:240px; vertical-align: middle;"></progress>
-    <span id="progress-text">0% — in attesa…</span>
+    <!-- Your form (keywords textarea instead of file) -->
+    <form id="search-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="year">Anno:</label>
+          <input type="number" id="year" name="year" min="2000" max="2025" value="2025" required>
+        </div>
+
+        <div class="form-group">
+          <label for="precision">Precisione ricerca (0-100):</label>
+          <input type="number" id="fuzz_threshold" name="fuzz_threshold" min="0" max="100" value="90" required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="startNum">Numero ricorso iniziale:</label>
+          <input type="number" id="start_num" name="start_num" min="1" value="1" required>
+        </div>
+
+        <div class="form-group">
+          <label for="endNum">Numero ricorso finale:</label>
+          <input type="number" id="end_num" name="end_num" min="1" value="10" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="keywords">Parole chiave (una per riga):</label>
+        <textarea id="keywords" name="keywords" placeholder="Inserisci le parole chiave da cercare, una per riga..."
+          required></textarea>
+      </div>
+      <div class="btn-container">
+        <button type="submit" class="btn-primary" id="startBtn">🔍 Avvia Ricerca</button>
+      </div>
+    </form>
+    <hr />
+
+    <!-- Progress -->
+    <div class="progress-container" id="progressContainer">
+      <h3 id="progressText">Ricerca in corso...</h3>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <p id="progress-text">0%</p>
+    </div>
+  </div>
+  <div class="results-container" id="resultsContainer">
+    <div class="results-header">
+      <h2>📋 Risultati della Ricerca</h2>
+      <p id="resultsCount"></p>
+    </div>
+    <table class="results-table" id="resultsTable">
+      <thead>
+        <tr>
+          <th>Parola Chiave</th>
+          <th>Numero Ricorso</th>
+          <th>Anno</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody">
+      </tbody>
+    </table>
   </div>
 
-  <!-- Logs -->
+  <!-- Logs
   <h2>Timeout</h2>
   <div id="timeout-log" class="log-box"></div>
 
@@ -63,8 +91,9 @@
   <div id="raw-log" class="log-box"></div>
 
   <h2>Matches</h2>
-  <div id="matches-log" class="log-box"></div>
+  <div id="matches-log" class="log-box"></div> -->
 
+  </div>
   <!-- IMPORTANT: use the Socket.IO script served by Flask-SocketIO (versions match) -->
   <script type="module">
     import { io } from "https://cdn.socket.io/4.8.1/socket.io.esm.min.js";
@@ -85,30 +114,34 @@
     // Progress updates (with elapsed time)
     socket.on('progress_update', (data) => {
       const pct = Math.max(0, Math.min(100, data.percentage || 0));
+      document.getElementById('progressContainer').style.display = 'block';
+      document.getElementById('resultsContainer').style.display = 'none';
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
       document.getElementById('progress-bar').value = pct;
       document.getElementById('progress-text').textContent =
         `${pct.toFixed(1)}% — ${data.status || ''}`;
     });
 
-    // Timeouts
-    socket.on('timeout_warning', (data) => {
-      const log = document.getElementById('timeout-log');
-      const div = document.createElement('div');
-      div.className = 'log-entry timeout';
-      div.textContent = `⚠️ Timeout su ${data.case_number}: ${data.reason}`;
-      log.appendChild(div);
-      log.scrollTop = log.scrollHeight;
-    });
+    // // Timeouts
+    // socket.on('timeout_warning', (data) => {
+    //   const log = document.getElementById('timeout-log');
+    //   const div = document.createElement('div');
+    //   div.className = 'log-entry timeout';
+    //   div.textContent = `⚠️ Timeout su ${data.case_number}: ${data.reason}`;
+    //   log.appendChild(div);
+    //   log.scrollTop = log.scrollHeight;
+    // });
 
-    // Raw valoreOggetto
-    socket.on('raw_content', (data) => {
-      const log = document.getElementById('raw-log');
-      const div = document.createElement('div');
-      div.className = 'log-entry raw';
-      div.textContent = `[${data.case_number}] ${data.content || '(vuoto)'}`;
-      log.appendChild(div);
-      log.scrollTop = log.scrollHeight;
-    });
+    // // Raw valoreOggetto
+    // socket.on('raw_content', (data) => {
+    //   const log = document.getElementById('raw-log');
+    //   const div = document.createElement('div');
+    //   div.className = 'log-entry raw';
+    //   div.textContent = `[${data.case_number}] ${data.content || '(vuoto)'}`;
+    //   log.appendChild(div);
+    //   log.scrollTop = log.scrollHeight;
+    // });
 
     // Matches
     socket.on('match_found', (data) => {
@@ -148,5 +181,5 @@
     });
   </script>
 </body>
-</html>
 
+</html>

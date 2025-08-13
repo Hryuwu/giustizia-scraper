@@ -234,6 +234,10 @@ textarea {
     }
 }
 
+.status {
+    margin: 10px 0;
+}
+
 .log-box {
     border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: scroll;
     }
