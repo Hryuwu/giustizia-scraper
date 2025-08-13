@@ -1,7 +1,7 @@
 {
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "pip install -r requirements.txt && python -m playwright install firefox"
+    "buildCommand": "pip install -r requirements.txt && python -m playwright install firefox && playwright install-deps"
   },
   "deploy": {
     "startCommand": "python app.py",
