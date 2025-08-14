@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import threading
+import json
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 from rapidfuzz import fuzz
@@ -15,7 +16,8 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 socketio = SocketIO(app, cors_allowed_origins="*")  # works on Railway behind proxy
 
-BASE_URL = "https://www.giustizia-amministrativa.it/web/guest/ricorsi-cds"
+with open("tribunali.json", "r", encoding="utf-8") as f:
+    TRIBUNALI_CONFIG = json.load(f)
 
 # ----- Scraper class -----
 class GiustiziaScraper:
@@ -37,10 +39,21 @@ class GiustiziaScraper:
         )
         return int(max(scores))
 
-    def scrape(self, year: int, start_num: int, end_num: int, keywords: list[str], threshold: int):
+    def scrape(self, tribunale: str, year: int, start_num: int, end_num: int, keywords: list[str], threshold: int):
+        config = TRIBUNALI_CONFIG.get(tribunale)
+        if not config:
+            self.emit("timeout_warning", {"case_number": "N/A", "reason": f"Tribunale '{tribunale}' non configurato"})
+            return
         start_time = time.time()
         total = max(0, end_num - start_num + 1)
         done = 0
+
+        # Settings
+        base_url = config["base_url"]
+        sel_year = config["selectors"]["year"]
+        sel_number = config["selectors"]["number"]
+        sel_search = config["selectors"]["search_button"]
+        sel_result = config["selectors"]["result"]
 
         # Normalize keywords once
         keywords = [k.strip() for k in keywords if k and k.strip()]
@@ -64,28 +77,27 @@ class GiustiziaScraper:
 
                 try:
                     # 1) open search page
-                    page.goto(BASE_URL, wait_until="domcontentloaded")
+                    page.goto(base_url, wait_until="domcontentloaded")
 
                     # 2) fill/select form
                     page.select_option(
-                        'select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year',
+                        sel_year,
                         str(year)
                     )
                     page.fill(
-                        'input#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number',
+                        sel_number,
                         number_str
                     )
 
                     # 3) click search
                     # it's a <button name="..._search"> or <input name="..._search">
-                    page.click('button[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"], input[name="_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search"]')
+                    page.click(sel_search)
 
                     # 4) wait for the result content
                     try:
-                        page.wait_for_selector("#valoreOggetto", timeout=15000)
+                        page.wait_for_selector(sel_result, timeout=15000)
                     except PlaywrightTimeoutError:
-                        # logger.warning("Timeout: #valoreOggetto missing for %s%s", year, number_str)
-                        logger.warning(test_logging)
+                        logger.warning("Timeout: #valoreOggetto missing for %s%s", year, number_str)
                         self.emit("timeout_warning", {
                             "case_number": f"{year}{number_str}",
                             "reason": "valoreOggetto non trovato entro il tempo limite"
@@ -97,7 +109,7 @@ class GiustiziaScraper:
 
                     # 5) extract content and show it raw
                     try:
-                        raw = (page.inner_text("#valoreOggetto") or "").strip()
+                        raw = (page.inner_text(sel_result) or "").strip()
                     except Exception:
                         raw = ""
                     self.emit("raw_content", {
@@ -154,17 +166,8 @@ def on_disconnect():
 
 @socketio.on("start_search")
 def on_start_search(data):
-    """
-    Payload from the page:
-      {
-        year: 2025,
-        start_num: 1,
-        end_num: 50,
-        fuzz_threshold: 80,
-        keywords: ["parola1", "parola2", ...]
-      }
-    """
     try:
+        tribunale = data.get("tribunale")
         year = int(data.get("year"))
         start_num = int(data.get("start_num"))
         end_num = int(data.get("end_num"))
@@ -175,9 +178,8 @@ def on_start_search(data):
         return
 
     scraper = GiustiziaScraper(socketio, request.sid)
-    # Run in a background task so we don't block the Socket.IO server
     socketio.start_background_task(
-        scraper.scrape, year, start_num, end_num, keywords, threshold
+        scraper.scrape, tribunale, year, start_num, end_num, keywords, threshold
     )
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+{
+  "Consiglio di Stato": {
+    "base_url": "https://www.giustizia-amministrativa.it/ricorsi-cds",
+    "selectors": {
+      "year": "select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_year",
+      "number": "input#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_number",
+      "search_button": "button[name='_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search'], input[name='_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_P4XO16kCEH4o_search']",
+      "result": "#valoreOggetto"
+    }
+  },
+  "TAR Lazio": {
+    "base_url": "https://www.giustizia-amministrativa.it/ricorsi-tar-roma",
+    "selectors": {
+      "year": "select#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_U5V5gy2AyMVz_year",
+      "number": "input#_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_U5V5gy2AyMVz_number",
+      "search_button": "button[name='_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_U5V5gy2AyMVz_search'], input[name='_it_indra_ga_institutional_area_JurisdictionalActivityAppealsWebPortlet_INSTANCE_U5V5gy2AyMVz_search']",
+      "result": "#valoreOggetto"
+    }
+  }
+}

@@ -20,6 +20,14 @@
 
     <!-- Search form -->
     <form id="search-form">
+      <div class="form-group">
+        <label for="tribunale">Tribunale:</label>
+        <select id="tribunale" name="tribunale" required>
+          <option value="Consiglio di Stato">Consiglio di Stato</option>
+          <option value="TAR Lazio">TAR Lazio</option>
+          <!-- Add more tribunali here -->
+        </select>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label for="year">Anno:</label>
@@ -121,6 +129,7 @@
       resultsContainer.style.display = 'none';
 
       const payload = {
+        tribunale: document.getElementById('tribunale').value,
         year: parseInt(document.getElementById('year').value, 10),
         start_num: parseInt(document.getElementById('start_num').value, 10),
         end_num: parseInt(document.getElementById('end_num').value, 10),
