@@ -3,6 +3,7 @@ import time
 import logging
 import threading
 import json
+import eventlet
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 from rapidfuzz import fuzz
