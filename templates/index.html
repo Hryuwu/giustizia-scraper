@@ -108,6 +108,10 @@
 
     let matchCounter = 0;
 
+    socket.on('debug_log', (data) => {
+      console.log(`[DEBUG] Step: ${data.step}`, data);
+    });
+
     // Connection events
     socket.on('connect', () => {
       connStatus.textContent = '🟢 Connesso';
@@ -137,6 +141,7 @@
         keywords: document.getElementById('keywords').value.split('\n').map(k => k.trim()).filter(k => k)
       };
 
+      console.log("[DEBUG] Sending start_search event. Payload: ", payload);
       socket.emit('start_search', payload);
       startBtn.disabled = true;
       progressContainer.style.display = 'block';
@@ -189,13 +194,6 @@
         }
       }
     });
-
-
-    socket.on('debug_log', (data) => {
-      console.log(`[DEBUG] Step: ${data.step}`, data);
-    });
-
   </script>
 </body>
-
 </html>

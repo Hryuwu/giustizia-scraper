@@ -40,6 +40,12 @@ class GiustiziaScraper:
         return int(max(scores))
 
     def scrape(self, tribunale: str, year: int, start_num: int, end_num: int, keywords: list[str], threshold: int):
+        
+        self.emit("debug_log", {
+            "step": "scrape_start",
+            "tribunale": tribunale
+        })
+                
         config = TRIBUNALI_CONFIG.get(tribunale)
         if not config:
             self.emit("timeout_warning", {
