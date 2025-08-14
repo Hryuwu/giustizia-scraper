@@ -192,8 +192,9 @@
 
 
     socket.on('debug_log', (data) => {
-      console.log("[DEBUG]", data.message || '', data);
+      console.log(`[DEBUG] Step: ${data.step}`, data);
     });
+
   </script>
 </body>
 
