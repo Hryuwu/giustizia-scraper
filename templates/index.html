@@ -5,7 +5,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Giustizia Scraper</title>
-  <!--- <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"> --->
   <link rel="stylesheet" href="../static/styles.css">
 </head>
 
@@ -19,14 +18,13 @@
     <!-- Connection status -->
     <div class="status" id="conn">🟡 Connessione…</div>
 
-    <!-- Your form (keywords textarea instead of file) -->
+    <!-- Search form -->
     <form id="search-form">
       <div class="form-row">
         <div class="form-group">
           <label for="year">Anno:</label>
           <input type="number" id="year" name="year" min="2000" max="2025" value="2025" required>
         </div>
-
         <div class="form-group">
           <label for="precision">Precisione ricerca (0-100):</label>
           <input type="number" id="fuzz_threshold" name="fuzz_threshold" min="0" max="100" value="90" required>
@@ -38,7 +36,6 @@
           <label for="startNum">Numero ricorso iniziale:</label>
           <input type="number" id="start_num" name="start_num" min="1" value="1" required>
         </div>
-
         <div class="form-group">
           <label for="endNum">Numero ricorso finale:</label>
           <input type="number" id="end_num" name="end_num" min="1" value="10" required>
@@ -58,133 +55,132 @@
 
     <!-- Progress -->
     <div class="progress-container" id="progressContainer">
-      <h3 id="progressText">Ricerca in corso...</h3>
+      <h3 id="progressStatus">Ricerca in corso...</h3>
       <div class="progress-bar">
-        <div class="progress-fill" id="progress-bar"></div>
+        <div class="progress-fill" id="progress-fill"></div>
       </div>
-      <p id="progress-text">0%</p>
+      <p id="progress-percentage">0%</p>
     </div>
   </div>
+
+  <!-- Results -->
   <div class="results-container" id="resultsContainer">
     <div class="results-header">
       <h2>📋 Risultati della Ricerca</h2>
       <p id="resultsCount"></p>
     </div>
-    <table class="results-table" id="resultsTable">
+    <table class="results-table">
       <thead>
         <tr>
           <th>Parola Chiave</th>
           <th>Numero Ricorso</th>
           <th>Anno</th>
+          <th>Dettagli</th>
         </tr>
       </thead>
-      <tbody id="matches-log">
-      </tbody>
+      <tbody id="matches-log"></tbody>
     </table>
   </div>
 
-  <!-- Logs
-  <h2>Timeout</h2>
-  <div id="timeout-log" class="log-box"></div>
-
-  <h2>Raw valoreOggetto</h2>
-  <div id="raw-log" class="log-box"></div>
-
-  <h2>Matches</h2>
-  <div id="matches-log" class="log-box"></div> -->
-
-  </div>
-  <!-- IMPORTANT: use the Socket.IO script served by Flask-SocketIO (versions match) -->
+  <!-- Socket.IO script -->
   <script type="module">
     import { io } from "https://cdn.socket.io/4.8.1/socket.io.esm.min.js";
-
     const socket = io({ transports: ['websocket', 'polling'] });
-    // Connection state
+
+    const connStatus = document.getElementById('conn');
+    const form = document.getElementById('search-form');
+    const startBtn = document.getElementById('startBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progress-fill');
+    const progressPercentage = document.getElementById('progress-percentage');
+    const progressStatus = document.getElementById('progressStatus');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const matchesLog = document.getElementById('matches-log');
+    const resultsCount = document.getElementById('resultsCount');
+
+    let matchCounter = 0;
+
+    // Connection events
     socket.on('connect', () => {
-      document.getElementById('conn').textContent = '🟢 Connesso';
+      connStatus.textContent = '🟢 Connesso';
     });
     socket.on('connect_error', (err) => {
-      document.getElementById('conn').textContent = '🔴 Errore di connessione: ' + (err?.message || err);
-      console.error('connect_error', err);
+      connStatus.textContent = '🔴 Errore di connessione: ' + (err?.message || err);
+      console.error(err);
     });
     socket.on('disconnect', () => {
-      document.getElementById('conn').textContent = '🟠 Disconnesso';
+      connStatus.textContent = '🟠 Disconnesso';
     });
 
-    // Progress updates (with elapsed time)
-    socket.on('progress_update', (data) => {
-      const pct = Math.max(0, Math.min(100, data.percentage || 0));
-      document.getElementById('progress-bar').value = pct;
-      document.getElementById('progressContainer').style.display = 'block';
-      document.getElementById('resultsContainer').style.display = 'none';
-      document.getElementById('startBtn').disabled = true;
-      document.getElementById('startBtn').textContent = '⏸️ Ricerca in corso...';
-      document.getElementById('progress-text').textContent =
-        `${pct.toFixed(1)}% — ${data.status || ''}`;
-    });
-
-    // // Timeouts
-    // socket.on('timeout_warning', (data) => {
-    //   const log = document.getElementById('timeout-log');
-    //   const div = document.createElement('div');
-    //   div.className = 'log-entry timeout';
-    //   div.textContent = `⚠️ Timeout su ${data.case_number}: ${data.reason}`;
-    //   log.appendChild(div);
-    //   log.scrollTop = log.scrollHeight;
-    // });
-
-    // // Raw valoreOggetto
-    // socket.on('raw_content', (data) => {
-    //   const log = document.getElementById('raw-log');
-    //   const div = document.createElement('div');
-    //   div.className = 'log-entry raw';
-    //   div.textContent = `[${data.case_number}] ${data.content || '(vuoto)'}`;
-    //   log.appendChild(div);
-    //   log.scrollTop = log.scrollHeight;
-    // });
-
-    // Matches
-    socket.on('match_found', (data) => {
-      const log = document.getElementById('matches-log');
-      const tr = document.createElement('tr');
-       tr.innerHTML = `
-          <td><span class="keyword-tag">${data.keyword}</span></td>
-          <td><span class="case-number">${data.case_number}</span></td>
-          <td>${year}</td>
-        `;
-      log.appendChild(tr);
-      log.scrollTop = log.scrollHeight;
-    });
-
-    // Submit form -> emit start_search
-    document.getElementById('search-form').addEventListener('submit', (e) => {
+    // Form submit
+    form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const form = e.currentTarget;
-      const fd = new FormData(form);
+      matchCounter = 0;
+      matchesLog.innerHTML = '';
+      resultsCount.textContent = '';
+      resultsContainer.style.display = 'none';
 
       const payload = {
-        year: parseInt(fd.get('year'), 10),
-        start_num: parseInt(fd.get('start_num'), 10),
-        end_num: parseInt(fd.get('end_num'), 10),
-        fuzz_threshold: parseInt(fd.get('fuzz_threshold'), 10),
-        keywords: (fd.get('keywords') || '')
-          .split('\n')
-          .map(s => s.trim())
-          .filter(Boolean)
+        year: parseInt(document.getElementById('year').value, 10),
+        start_num: parseInt(document.getElementById('start_num').value, 10),
+        end_num: parseInt(document.getElementById('end_num').value, 10),
+        fuzz_threshold: parseInt(document.getElementById('fuzz_threshold').value, 10),
+        keywords: document.getElementById('keywords').value.split('\n').map(k => k.trim()).filter(k => k)
       };
 
-      // Reset logs & progress
-      // document.getElementById('timeout-log').innerHTML = '';
-      // document.getElementById('raw-log').innerHTML = '';
-      document.getElementById('matches-log').innerHTML = '';
-      document.getElementById('progressContainer').style.display = 'none';
-      document.getElementById('startBtn').disabled = false;
-      document.getElementById('startBtn').textContent = '🔍 Avvia Ricerca';
-      document.getElementById('progress-bar').value = 0;
-      document.getElementById('progress-text').textContent = '0% — avviato';
-
       socket.emit('start_search', payload);
+      startBtn.disabled = true;
+      progressContainer.style.display = 'block';
+    });
+
+    // Progress updates
+    socket.on('progress_update', (data) => {
+      progressFill.style.width = `${data.percentage.toFixed(1)}%`;
+      progressPercentage.textContent = `${data.percentage.toFixed(1)}%`;
+      progressStatus.textContent = data.status;
+      if (data.current === data.total) {
+        startBtn.disabled = false;
+      }
+    });
+
+    // Match found
+    socket.on('match_found', (data) => {
+      matchCounter++;
+      const row = document.createElement('tr');
+      const detailsId = `details-${matchCounter}`;
+
+      row.innerHTML = `
+      <td><span class="keyword-tag">${data.keyword}</span></td>
+      <td class="case-number">
+        <a href="#" data-target="${detailsId}" class="toggle-details">${data.case_number}</a>
+      </td>
+      <td>${data.case_number.substring(0, 4)}</td>
+      <td>
+        <div id="${detailsId}" class="case-details" style="display:none; max-width:400px; white-space:pre-wrap;">
+          ${data.content || '<em>(Nessun testo trovato)</em>'}
+        </div>
+      </td>
+    `;
+
+      matchesLog.appendChild(row);
+      resultsCount.textContent = `${matchCounter} risultati trovati`;
+      resultsContainer.style.display = 'block';
+    });
+
+    // Toggle details click
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('toggle-details')) {
+        e.preventDefault();
+        const targetId = e.target.getAttribute('data-target');
+        const detailsEl = document.getElementById(targetId);
+        if (detailsEl) {
+          const isHidden = detailsEl.style.display === 'none';
+          detailsEl.style.display = isHidden ? 'block' : 'none';
+          detailsEl.classList.toggle('show', isHidden);
+        }
+      }
     });
   </script>
 </body>
+
 </html>
