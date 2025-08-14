@@ -74,7 +74,9 @@ class GiustiziaScraper:
                 "threshold": threshold
             }
         })
-
+        
+        eventlet.sleep()
+        
         start_time = time.time()
         total = max(0, end_num - start_num + 1)
         done = 0
@@ -85,6 +87,7 @@ class GiustiziaScraper:
             page = browser.new_page(ignore_https_errors=True)
 
             for num in range(start_num, end_num + 1):
+                eventlet.sleep(0)
                 number_str = f"{num:05d}"
                 elapsed = time.time() - start_time
                 pct = 0 if total == 0 else (done / total) * 100.0
@@ -182,6 +185,10 @@ class GiustiziaScraper:
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@socketio.on("ping")
+def handle_ping():
+    emit("pong")
 
 @socketio.on("connect")
 def on_connect():
