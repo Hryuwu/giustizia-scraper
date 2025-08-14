@@ -55,6 +55,18 @@ class GiustiziaScraper:
         sel_search = config["selectors"]["search_button"]
         sel_result = config["selectors"]["result"]
 
+        ## Logging
+        self.emit("debug_log", {
+            "message": f"Searching site: {base_url} | Tribunale: {tribunale}",
+            "payload": {
+                "year": year,
+                "start_num": start_num,
+                "end_num": end_num,
+                "keywords": keywords,
+                "threshold": threshold
+            }
+        })
+
         # Normalize keywords once
         keywords = [k.strip() for k in keywords if k and k.strip()]
 
@@ -77,6 +89,8 @@ class GiustiziaScraper:
 
                 try:
                     # 1) open search page
+                    ## logging
+                    self.emit("debug_log", {"message": f"Navigating to: {base_url}"})
                     page.goto(base_url, wait_until="domcontentloaded")
 
                     # 2) fill/select form
@@ -115,6 +129,12 @@ class GiustiziaScraper:
                     self.emit("raw_content", {
                         "case_number": f"{year}{number_str}",
                         "content": raw
+                    })
+                    
+                    ## Logging
+                    self.emit("debug_log", {
+                        "message": f"Raw content for case {year}{number_str}",
+                        "raw": raw
                     })
 
                     # 6) fuzzy match against all keywords
