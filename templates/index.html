@@ -81,7 +81,6 @@
         <tr>
           <th>Parola Chiave</th>
           <th>Numero Ricorso</th>
-          <th>Anno</th>
           <th>Dettagli</th>
         </tr>
       </thead>
@@ -167,7 +166,6 @@
       <td class="case-number">
         <a href="#" data-target="${detailsId}" class="toggle-details">${data.case_number}</a>
       </td>
-      <td>${data.case_number.substring(0, 4)}</td>
       <td>
         <div id="${detailsId}" class="case-details" style="display:none; max-width:400px; white-space:pre-wrap;">
           ${data.content || '<em>(Nessun testo trovato)</em>'}
@@ -197,3 +195,4 @@
 </body>
 
 </html>
+
