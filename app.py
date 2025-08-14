@@ -172,7 +172,7 @@ class GiustiziaScraper:
                         "current": done,
                         "total": total,
                         "percentage": pct,
-                        "status": f"Completato {year}{number_str}"
+                        "status": "Completato"
                     })
 
             browser.close()
