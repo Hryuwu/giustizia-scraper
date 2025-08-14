@@ -16,6 +16,7 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
+
 with open("tribunali.json", "r", encoding="utf-8") as f:
     TRIBUNALI_CONFIG = json.load(f)
 
